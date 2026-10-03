@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { verifySession } from '@/lib/auth/session'
 import { z } from 'zod'
 import { canAccessProject, canWriteProject } from '@/lib/edition/guard'
+import { workspaceSchemaName } from '@/lib/security/workspace-schema'
+import { ensureEmailVerifiedColumn } from '@/lib/services/end-user-auth-flows'
 
 /**
  * GET/PUT /api/projects/[id]/auth-email-settings
@@ -110,6 +112,14 @@ export async function PUT(request: NextRequest, props: { params: Promise<{ id: s
       ...(appUrl !== undefined && { appUrl: appUrl || null }),
       ...(requireEmailVerification !== undefined && { requireEmailVerification }),
       ...(magicLinksEnabled !== undefined && { magicLinksEnabled }),
+    }
+
+    // Turning verification on records every EXISTING end user as verified now
+    // (ensureEmailVerifiedColumn grandfathers the rows present when it adds the
+    // column), so the switch itself can never lock an app's users out. A
+    // project with no users table yet has nothing to record; that is ignored.
+    if (requireEmailVerification === true) {
+      await ensureEmailVerifiedColumn(workspaceSchemaName(params.id))
     }
 
     const config = await prisma.projectAuthConfig.upsert({

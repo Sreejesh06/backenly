@@ -136,11 +136,11 @@ async function handlePOST(request: NextRequest, props: { params: Promise<{ proje
     const optColRows = await prisma.$queryRawUnsafe<{ column_name: string }[]>(
       `SELECT column_name FROM information_schema.columns
        WHERE table_schema = $1 AND table_name = 'users'
-       AND column_name IN ('role', 'is_blocked')`,
+       AND column_name IN ('role', 'is_blocked', 'email_verified')`,
       schemaName
     )
     const optCols = new Set(optColRows.map(r => r.column_name))
-    const selectCols = ['id', 'email', `"${pwCol}"`, 'name', ...(optCols.has('role') ? ['"role"'] : []), ...(optCols.has('is_blocked') ? ['"is_blocked"'] : [])].join(', ')
+    const selectCols = ['id', 'email', `"${pwCol}"`, 'name', ...(optCols.has('role') ? ['"role"'] : []), ...(optCols.has('is_blocked') ? ['"is_blocked"'] : []), ...(optCols.has('email_verified') ? ['"email_verified"'] : [])].join(', ')
 
     // Sign-in must read the users row to verify the password hash. At this
     // moment the caller has no session-context user id yet, so RLS would
@@ -189,6 +189,22 @@ async function handlePOST(request: NextRequest, props: { params: Promise<{ proje
     // who is entitled to know why they cannot get in.
     if (user.is_blocked) {
       return createErrorResponse(ErrorCodes.FORBIDDEN, 'This account has been suspended.', 403)
+    }
+
+    // Email-verification gate — opt-in via ProjectAuthConfig. Only blocks when
+    // the column exists AND is explicitly false, so legacy users tables
+    // without the column are unaffected.
+    if (user.email_verified === false) {
+      const { getAuthEmailContext } = await import('@/lib/services/end-user-auth-email')
+      const emailCtx = await getAuthEmailContext(projectId)
+      if (emailCtx.requireEmailVerification) {
+        return createErrorResponse(
+          ErrorCodes.FORBIDDEN,
+          'Please verify your email before signing in. Check your inbox for the verification link.',
+          403,
+          { reason: 'EMAIL_NOT_VERIFIED' },
+        )
+      }
     }
 
     const token = jwt.sign(
