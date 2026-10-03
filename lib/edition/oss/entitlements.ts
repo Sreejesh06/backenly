@@ -42,6 +42,11 @@ export async function bonusCredits(_userId: string): Promise<number> {
   return 0
 }
 
+/** Nothing is sold, so nothing was bought. */
+export async function purchasedCredits(_userId: string): Promise<number> {
+  return 0
+}
+
 /** Nothing to charge. */
 export async function recordAiConsumption(_userId: string, _tokensUsed: number): Promise<void> {
   // no-op

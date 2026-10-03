@@ -24,7 +24,7 @@
  */
 import crypto from 'crypto'
 
-import { bonusCredits, recordAiConsumption } from '@cloud/entitlements'
+import { bonusCredits, purchasedCredits, recordAiConsumption } from '@cloud/entitlements'
 import { prisma } from '@/lib/db/prisma'
 import { getUserEntitlements } from './index'
 import type { UserEntitlements } from './types'
@@ -203,17 +203,23 @@ export async function enforceAiCredits(userId: string): Promise<true | LimitViol
     const maxCredits = ent.monthlyAiCredits
     if (maxCredits === null || maxCredits === undefined) return true // unlimited (fair-use)
 
-    // Bonus credits (referral / promo grants) genuinely extend the monthly cap.
+    // Bonus credits (referral / promo grants) and purchased credits genuinely
+    // extend the monthly cap. Both are balances the ledger brings up to date at
+    // month rollover, so this month's usage is measured against all three.
     const bonus = await bonusCredits(userId)
-    const effectiveMax = maxCredits + bonus
+    const purchased = await purchasedCredits(userId)
+    const effectiveMax = maxCredits + bonus + purchased
 
     const usage = await getMonthlyUsage(userId)
     const creditsUsed = creditsFromTokens(usage.aiTokensUsed)
     if (creditsUsed >= effectiveMax) {
+      const parts = [`${maxCredits.toLocaleString()} plan`]
+      if (bonus > 0) parts.push(`${bonus.toLocaleString()} bonus`)
+      if (purchased > 0) parts.push(`${purchased.toLocaleString()} purchased`)
       return violation(
         ent.planName,
-        bonus > 0
-          ? `You've used all ${effectiveMax.toLocaleString()} AI credits available this month (${maxCredits.toLocaleString()} plan + ${bonus.toLocaleString()} bonus) on the ${planDisplayName(ent.planName)} plan. Credits reset on the 1st — or upgrade for more.`
+        parts.length > 1
+          ? `You've used all ${effectiveMax.toLocaleString()} AI credits available this month (${parts.join(' + ')}) on the ${planDisplayName(ent.planName)} plan. Credits reset on the 1st — or upgrade for more.`
           : `You've used all ${maxCredits.toLocaleString()} AI credits this month on the ${planDisplayName(ent.planName)} plan. Credits reset on the 1st — or upgrade for more.`,
       )
     }

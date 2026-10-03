@@ -37,6 +37,10 @@ model User {
   // `plan.monthlyAiCredits + bonusCredits`; consumption is reconciled at month
   // rollover (see lib/billing/credit-ledger.ts). Never silently re-ratioed.
   bonusCredits            Int                      @default(0)
+  // Credits bought outright (one-time Stripe Checkout in Cloud). Unlike bonus
+  // credits they are paid for, so month rollover never expires them: they are
+  // spent only by usage beyond plan + bonus. Zero wherever nothing is sold.
+  purchasedCredits        Int                      @default(0)
   // Last YYYY-MM whose bonus consumption has been reconciled into bonusCredits.
   // Guards the idempotent month-rollover reconciliation (no cron dependency).
   bonusReconciledThrough  String?
@@ -75,6 +79,7 @@ model User {
   referrals               User[]                   @relation("UserReferrals")
   referralCode            ReferralCode?
   creditLedger            CreditLedgerEntry[]
+  aiCreditPurchases       AiCreditPurchase[]
   referralGrantsMade      ReferralGrant[]          @relation("ReferralReferrer")
   referralGrantReceived   ReferralGrant?           @relation("ReferralReferee")
   // ── Organization relations (Phase 6) ──────────────────────────────────────
@@ -1325,20 +1330,23 @@ model CreditReservation {
   @@map("credit_reservations")
 }
 
-// ─── Credit ledger (bonus assistant credits) ────────────────────────────────
-// Append-only audit trail of every bonus-credit movement: grants (referral,
-// promo, signup bonus) as positive amounts, and month-rollover burns (bonus
-// consumed beyond the plan allowance) as negatives. The Billing "Credit
-// activity" tab reads from here; `User.bonusCredits` is the running balance.
+// ─── Credit ledger (bonus and purchased assistant credits) ──────────────────
+// Append-only audit trail of every movement of the two credit balances:
+// grants (referral, promo, signup bonus) and purchases as positive amounts, and
+// month-rollover burns (credits consumed beyond the plan allowance) as
+// negatives. The Billing "Credit activity" tab reads from here;
+// `User.bonusCredits` and `User.purchasedCredits` are the running balances.
 model CreditLedgerEntry {
   id           String   @id @default(uuid())
   userId       String
-  // Signed credits: +grant, -burn. Sum over a user == bonusCredits ever moved.
+  // Signed credits: +grant, -burn. Summed over one balance's reasons, equals
+  // that balance's net movement.
   amount       Int
-  // Running bonus balance immediately AFTER this entry (for a clean history UI).
+  // That balance immediately AFTER this entry (for a clean history UI).
   balanceAfter Int
-  // 'referral_signup' | 'referral_paid' | 'promo' | 'admin_grant' |
-  // 'monthly_bonus_burn' | 'signup_bonus'
+  // Bonus: 'referral_signup' | 'referral_paid' | 'promo' | 'admin_grant' |
+  //        'monthly_bonus_burn' | 'signup_bonus'
+  // Purchased: 'purchase' | 'monthly_purchased_burn'
   reason       String
   // Free-form human note shown in the history row.
   description  String?
@@ -1350,6 +1358,26 @@ model CreditLedgerEntry {
 
   @@index([userId, createdAt])
   @@map("credit_ledger_entries")
+}
+
+// ─── AI credit purchases ────────────────────────────────────────────────────
+// One row per paid Stripe Checkout Session that bought credits: the
+// fulfilment record. The unique session id is what makes the grant idempotent,
+// so a webhook delivered twice can never credit an account twice. Written only
+// by the Cloud overlay; Stripe stays the payment authority.
+model AiCreditPurchase {
+  id              String   @id @default(uuid())
+  userId          String
+  stripeSessionId String   @unique
+  credits         Int
+  amountCents     Int
+  currency        String
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("ai_credit_purchases")
 }
 
 // ─── Referral program ───────────────────────────────────────────────────────
