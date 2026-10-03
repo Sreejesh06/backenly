@@ -38,7 +38,7 @@ describe('charging egress: one switch, and never the direct rate', () => {
       expect(axisBillable('SCALE', axis, true)).toBe(false)
     }
     expect(axisBillable('BUILDER', 'egress_bytes', false)).toBe(false)
-    expect(axisBillable('BUILDER', 'egress_bytes', true)).toBe(true)
+    expect(axisBillable('BUILDER', 'egress_bytes', true)).toBe(false)
     expect(axisBillable('SANDBOX', 'egress_bytes', true)).toBe(false)
   })
 
@@ -64,13 +64,13 @@ describe('publishing', () => {
     expect(usagePricingPublished('published')).toBe(true)
   })
 
-  it('publishes every rate, the database one included once its cost was measured', () => {
+  it('publishes all rates except egress (held back: thin margin on CloudFront India PAYG)', () => {
     expect(OVERAGE_RATE_PUBLISHED).toEqual({
       mau: true,
       db_bytes: true,
       file_bytes: true,
       fn_runs: true,
-      egress_bytes: true,
+      egress_bytes: false,
     })
   })
 })
@@ -82,7 +82,7 @@ describe('the Pro usage table', () => {
       { axis: 'db_bytes', label: 'Database', included: '8 GB', rate: '$0.30 per GB-month' },
       { axis: 'file_bytes', label: 'File storage', included: '100 GB', rate: '$0.03 per GB-month' },
       { axis: 'fn_runs', label: 'Function runs', included: '2M', rate: '$2.00 per 1M runs' },
-      { axis: 'egress_bytes', label: 'Egress', included: '250 GB', rate: '$0.12 per GB' },
+      { axis: 'egress_bytes', label: 'Egress', included: '250 GB', rate: null },
     ])
   })
 
