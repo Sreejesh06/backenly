@@ -17,6 +17,8 @@ import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 import { recordedV1 } from '@/lib/traffic/recorded-v1'
 import { emitEndUserCreated } from '@/lib/services/end-user-auth-events'
+import { getAuthEmailContext } from '@/lib/services/end-user-auth-email'
+import { ensureEmailVerifiedColumn, requestEmailVerification } from '@/lib/services/end-user-auth-flows'
 
 /**
  * POST /v1/{projectId}/auth/signup
@@ -128,6 +130,15 @@ async function handlePOST(request: NextRequest, props: { params: Promise<{ proje
       }
     }
 
+    // Email verification is the project's choice (ProjectAuthConfig, off by
+    // default). A project that never turned it on is left exactly as it was: no
+    // column added, no email sent. One that did gets the column BEFORE this
+    // insert, because ensureEmailVerifiedColumn grandfathers rows that exist
+    // when it first adds the column, and this new account must not be one.
+    const requireVerification =
+      !isInternalTest && (await getAuthEmailContext(projectId)).requireEmailVerification
+    if (requireVerification) await ensureEmailVerifiedColumn(schemaName)
+
     const hashedPassword = await hashPassword(password)
     const displayName = name || email.split('@')[0]
 
@@ -175,6 +186,16 @@ async function handlePOST(request: NextRequest, props: { params: Promise<{ proje
         (err: any) => console.warn('[AiFunctions] on_signup failed (non-fatal):', err?.message)
       )
     }).catch(() => {})
+
+    // Non-blocking: the branded verification email (24h token), only where the
+    // project requires verification. Sign-in enforces it; signup never waits on
+    // SMTP. Reserved verifier accounts never get here (requireVerification is
+    // false for them), so no orphaned `_email_verifications` row is left behind.
+    if (requireVerification) {
+      requestEmailVerification(projectId, email).catch(
+        (err: any) => console.warn('[EmailVerification] signup send failed (non-fatal):', err?.message)
+      )
+    }
 
     // 201, as the runtime's signup answers and the contract probe expects: the
     // two implementations of one endpoint must not disagree on success (#147).

@@ -292,10 +292,12 @@ describe('only an enforce policy with a spend limit raises a cap', () => {
     expect(off.axes.egress_bytes.headroom).toBe(0)
     expect(off.axes.egress_bytes.cap).toBe(3 * 1024 * 1024 * 1024)
 
+    // Even with the egress billing switch on, egress stays non-billable while
+    // its rate is unpublished (OVERAGE_RATE_PUBLISHED.egress_bytes = false).
     const on = computeAccountLimits(pro(), over, enforce, 'cdn', true)
-    expect(on.axes.egress_bytes.billable).toBe(true)
-    expect(on.axes.egress_bytes.estimatedCents).toBeCloseTo(24, 6) // 2 GiB x $0.12
-    expect(on.axes.egress_bytes.headroom).toBeGreaterThan(0)
+    expect(on.axes.egress_bytes.billable).toBe(false)
+    expect(on.axes.egress_bytes.estimatedCents).toBe(0)
+    expect(on.axes.egress_bytes.headroom).toBe(0)
   })
 })
 

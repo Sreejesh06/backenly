@@ -11,6 +11,7 @@ import {
   forgotEndUserPassword,
   resetEndUserPassword,
   requestEmailVerification,
+  ensureEmailVerifiedColumn,
   verifyEndUserEmail,
   requestMagicLink,
   verifyMagicLink,
@@ -187,6 +188,13 @@ async function handleSignUp(req: Request, res: Response) {
       }
     }
 
+    // Email verification is the project's choice, exactly as on the Next
+    // signup route: off by default, and the column goes in BEFORE the insert
+    // when it is on (see ensureEmailVerifiedColumn on grandfathering).
+    const requireVerification =
+      !isInternalTest && (await getAuthEmailContext(projectId)).requireEmailVerification
+    if (requireVerification) await ensureEmailVerifiedColumn(schemaName)
+
     const hashedPassword = await hashPassword(password)
     const displayName = name || email.split('@')[0]
 
@@ -230,12 +238,12 @@ async function handleSignUp(req: Request, res: Response) {
       )
     }).catch(() => {})
 
-    // Non-blocking: send the branded verification email (24h token). Signup
-    // never waits on SMTP — verification is enforced (if enabled) at signin.
-    // Skip entirely for synthetic verifier accounts (…@*.internal): issuing a
-    // token would leave an orphaned `_email_verifications` row in the
-    // developer's Tables after the verifier deletes the throwaway user.
-    if (!isReservedTestEmail(email)) {
+    // Non-blocking: the branded verification email (24h token), only where the
+    // project requires verification. This used to go to every new user of every
+    // project, which sent an unasked-for "verify your email" and added the
+    // column to tables that never wanted it. Signup never waits on SMTP;
+    // sign-in enforces. Reserved verifier accounts are excluded above.
+    if (requireVerification) {
       requestEmailVerification(projectId, email).catch(
         (err: any) => console.warn('[EmailVerification] signup send failed (non-fatal):', err?.message)
       )
