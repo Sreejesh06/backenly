@@ -27,6 +27,7 @@
 # on `tests/core` in ci.yml); a red that is always red carries no information.
 
 __tests__/architecture-hardening.test.ts
+__tests__/billing/purchased-credits-extend-the-cap.test.ts
 __tests__/pointer-swap-concurrency.test.ts
 __tests__/retry-logic.test.ts
 tests/bench/ai-function-db-casts.spec.ts

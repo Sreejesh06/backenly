@@ -37,6 +37,10 @@ model User {
   // `plan.monthlyAiCredits + bonusCredits`; consumption is reconciled at month
   // rollover (see lib/billing/credit-ledger.ts). Never silently re-ratioed.
   bonusCredits            Int                      @default(0)
+  // Credits bought outright (one-time Stripe Checkout in Cloud). Unlike bonus
+  // credits they are paid for, so month rollover never expires them: they are
+  // spent only by usage beyond plan + bonus. Zero wherever nothing is sold.
+  purchasedCredits        Int                      @default(0)
   // Last YYYY-MM whose bonus consumption has been reconciled into bonusCredits.
   // Guards the idempotent month-rollover reconciliation (no cron dependency).
   bonusReconciledThrough  String?
@@ -75,6 +79,7 @@ model User {
   referrals               User[]                   @relation("UserReferrals")
   referralCode            ReferralCode?
   creditLedger            CreditLedgerEntry[]
+  aiCreditPurchases       AiCreditPurchase[]
   referralGrantsMade      ReferralGrant[]          @relation("ReferralReferrer")
   referralGrantReceived   ReferralGrant?           @relation("ReferralReferee")
   // ── Organization relations (Phase 6) ──────────────────────────────────────
@@ -1350,6 +1355,26 @@ model CreditLedgerEntry {
 
   @@index([userId, createdAt])
   @@map("credit_ledger_entries")
+}
+
+// ─── AI credit purchases ────────────────────────────────────────────────────
+// One row per paid Stripe Checkout Session that bought credits: the
+// fulfilment record. The unique session id is what makes the grant idempotent,
+// so a webhook delivered twice can never credit an account twice. Written only
+// by the Cloud overlay; Stripe stays the payment authority.
+model AiCreditPurchase {
+  id              String   @id @default(uuid())
+  userId          String
+  stripeSessionId String   @unique
+  credits         Int
+  amountCents     Int
+  currency        String
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("ai_credit_purchases")
 }
 
 // ─── Referral program ───────────────────────────────────────────────────────
