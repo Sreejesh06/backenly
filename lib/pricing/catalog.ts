@@ -149,15 +149,19 @@ export function overagePrice(axis: OverageAxis, terms: EgressTerms = egressTerms
  * Which rates are PUBLISHED: stated on the pricing page and, only then,
  * chargeable (axisBillable). A rate is published once measured cost confirms it
  * sits above its floor: marginal usage is never sold below cost, and a rate that
- * may still move is never advertised as a commitment. Egress is published and
- * still charged only once egressBillable() holds.
+ * may still move is never advertised as a commitment.
+ *
+ * Egress is UNPUBLISHED: CloudFront India PAYG is ~$0.109/GB, so $0.12 has
+ * only ~9% margin before ancillary costs. Kept non-billable (BACKENLY_EGRESS_BILLING
+ * unset) and hidden from the pricing page until a safer rate or improved
+ * economics are approved.
  */
 export const OVERAGE_RATE_PUBLISHED: Readonly<Record<OverageAxis, boolean>> = {
   mau: true,
   db_bytes: true,
   file_bytes: true,
   fn_runs: true,
-  egress_bytes: true,
+  egress_bytes: false,
 }
 
 /** "$0.003 per MAU", "$2.00 per 1M runs": how a published rate reads on the page. */
